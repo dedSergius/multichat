@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MultiChat</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background: transparent;
+            color: white;
+            font-family: Arial, sans-serif;
+            overflow: hidden;
+            paint-order: stroke fill;
+            -webkit-text-stroke: 2px #000000;
+            text-shadow: 3px 3px black;
+        }
+
+        .message {
+            display: flex;
+            align-items: center;
+            margin-bottom: 10px;
+            font-size: 16px;
+            animation: fadeIn 0.5s ease-in-out;
+        }
+
+        .deleted {
+            animation: fadeOut 0.5s ease-in-out;
+        }
+
+        .avatar {
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            margin-right: 10px;
+            flex-shrink: 0;
+        }
+
+        .username {
+            font-weight: bold;
+            margin-right: 10px;
+        }
+
+        .youtube .username {
+            color: blue;
+            white-space: nowrap;
+        }
+
+        .twitch .username {
+            color: var(--color);
+        }
+
+        .logo {
+            margin-left: 5px;
+            width: 50px;
+            height: 50px;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        @keyframes fadeOut {
+            from {
+                opacity: 1;
+                transform: translateY(0);
+            }
+            to {
+                opacity: 0;
+                transform: translateY(-10px);
+            }
+        }
+    </style>
+</head>
+<body>
+    <div id="chat"><div class="message">Подключение...</div></div>
+
+    <script>
+        const chatContainer = document.getElementById('chat')
+
+        // Извлечение ключа из URL
+        const urlParams = new URLSearchParams(window.location.search);
+        const accessKey = urlParams.get('key')
+
+        if (!accessKey) {
+            chatContainer.innerHTML = ''
+            const messageDiv = document.createElement('div')
+                messageDiv.classList.add('message')
+                messageDiv.style.setProperty('--color', '#FFFFFF')
+                messageDiv.innerHTML = `<span class="message-text">Ключ доступа обязателен. Добавьте ?key=ключ к URL</span>`
+                chatContainer.appendChild(messageDiv)
+            throw new Error('Ключ доступа отсутствует.')
+        }
+
+        // Подключение к WebSocket
+        const ws = new WebSocket(`ws://misaka.lukin.site:4050?key=${encodeURIComponent(accessKey)}`)
+
+        ws.onopen = () => {
+            console.log('WebSocket подключён')
+        }
+
+        ws.onmessage = async (event) => {
+            const data = JSON.parse(event.data)
+
+            if (data.event === 'connected') {
+                chatContainer.innerHTML = ''
+                return
+            }
+
+            if (data.event === 'status') {
+                const messageDiv = document.createElement('div')
+                messageDiv.classList.add('message', data.platform.toLowerCase())
+                messageDiv.style.setProperty('--color', '#FFFFFF')
+                messageDiv.innerHTML = `
+                    <img class="logo" src="./${data.platform.toLowerCase()}.png" alt="${data.platform}">
+                    <span class="message-text">${data.status}</span>
+                `
+
+                chatContainer.appendChild(messageDiv)
+                setTimeout(async () => {
+                    messageDiv.classList.add('deleted')
+                    await new Promise(r => setTimeout(r, 500))
+                    chatContainer.removeChild(messageDiv)
+                }, 60000)
+            }
+
+            if (data.event === 'message') {
+                const messageDiv = document.createElement('div')
+                messageDiv.classList.add('message', data.platform.toLowerCase())
+                messageDiv.setAttribute('data-id', data.id)
+
+                if (data.platform === 'Twitch') {
+                    messageDiv.style.setProperty('--color', data.color || '#FFFFFF')
+                }
+
+                messageDiv.innerHTML = `
+                    <img class="logo" src="./${data.platform.toLowerCase()}.png" alt="${data.platform}">
+                    <img class="avatar" src="${data.avatar || ''}" alt="Avatar">
+                    <span class="username" style="${data.isModerator ? 'color: blue;' : ''}">${data.user}</span>
+                    <span class="message-text">${data.text}</span>
+                `
+
+                chatContainer.appendChild(messageDiv)
+                setTimeout(async () => {
+                    messageDiv.classList.add('deleted')
+                    await new Promise(r => setTimeout(r, ms))
+                    chatContainer.removeChild(messageDiv)
+                }, 60000)
+            } else if (data.event === 'delete') {
+                const messageDiv = document.querySelector(`.message[data-id="${data.id}"]`)
+                if (messageDiv) {
+                    messageDiv.classList.add('deleted')
+                    await new Promise(r => setTimeout(r, 500))
+                    chatContainer.removeChild(messageDiv)
+                }
+            }
+        }
+
+
+        ws.onerror = (error) => {
+            console.error('Ошибка WebSocket:', error)
+            const messageDiv = document.createElement('div')
+                messageDiv.classList.add('message')
+                messageDiv.style.setProperty('--color', '#FFFFFF')
+                messageDiv.innerHTML = `<span class="message-text">Ошибка подключения к серверу WebSocket</span>`
+                chatContainer.appendChild(messageDiv)
+        }
+
+        ws.onclose = (event) => {
+            const messageDiv = document.createElement('div')
+            messageDiv.classList.add('message')
+            messageDiv.style.setProperty('--color', '#FFFFFF')
+            if (event.code === 1008) {
+                chatContainer.innerHTML = ''
+                messageDiv.innerHTML = `<span class="message-text">Подключение отклонено: неверный ключ</span>`
+            } else {
+                messageDiv.innerHTML = `<span class="message-text">Соединение с сервером потеряно</span>`
+            }
+            chatContainer.appendChild(messageDiv)
+        }
+    </script>
+</body>
+</html>
